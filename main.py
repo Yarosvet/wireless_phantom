@@ -1,16 +1,9 @@
-import subprocess
-import os
+from pyaccesspoint import AccessPoint
+import logging
+import time
 
-
-def main():
-    configfile = os.path.join(os.path.abspath(__file__)[:-len(os.path.split(os.path.abspath(__file__))[-1])],
-                              "hostapd.conf")
-    subprocess.call(args=["hostapd", "-B", configfile])
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        subprocess.call(args=["killall", "hostapd"])
-        raise exc
+logging.basicConfig(level=logging.DEBUG)
+ap = AccessPoint(wlan="wlan0", ip="192.168.50.1", ssid="WirelessPhantom", password="besecure6", inet="eth0")
+ap.start()
+time.sleep(50)
+ap.stop()
