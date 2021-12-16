@@ -54,6 +54,14 @@ rsn_pairwise=CCMP
 #For No encryption, you don't need to set any options
 '''
 
+dnsmasq_config = '''interface={}
+listen-address={}
+bind-interfaces
+dhcp-range={}.20,{}.100,{},4h
+dhcp-option=3,{}
+dhcp-option=6,{}
+'''
+
 
 class AccessPoint:
     def __init__(self, wlan='wlan0', inet=None, ip='192.168.45.1', netmask='255.255.255.0', ssid='MyAccessPoint',
@@ -66,6 +74,7 @@ class AccessPoint:
         self.password = password
         self.root_directory = "/etc/wireless_phantom/"
         self.hostapd_config_path = os.path.join(self.root_directory, "hostapd.config")
+        self.dnsmasq_config_path = os.path.join(self.root_directory, "dnsmasq.conf")
 
         if not os.path.exists(self.root_directory):
             os.makedirs(self.root_directory)
@@ -104,6 +113,15 @@ class AccessPoint:
             hostapd_config_file.write(config.format(self.ssid, self.password, self.wlan))
 
         logging.debug("Hostapd config saved to %s", self.hostapd_config_path)
+
+    def _write_dnsmasq_config(self):
+        with open(self.dnsmasq_config_path, 'w') as hostapd_config_file:
+            i = self.ip.rindex('.')
+            ipparts = self.ip[0:i]
+            hostapd_config_file.write(
+                dnsmasq_config.format(self.wlan, self.ip, ipparts, ipparts, self.netmask, self.ip, self.ip))
+
+        logging.debug("Dnsmasq config saved to %s", self.dnsmasq_config_path)
 
     def _validate_ip(self, addr):
         try:
@@ -147,8 +165,6 @@ class AccessPoint:
         # print('sleeping for 2 seconds.')
         logging.debug('wait..')
         self._execute_shell('sleep 2')
-        i = self.ip.rindex('.')
-        ipparts = self.ip[0:i]
 
         # enable forwarding in sysctl.
         logging.debug('enabling forward in sysctl.')
@@ -167,12 +183,9 @@ class AccessPoint:
             if len(r.strip()) > 0:
                 logging.debug(r.strip())
             self._execute_shell('iptables -t nat -A POSTROUTING -o {} -j MASQUERADE'.format(self.inet))
-            print('iptables -t nat -A POSTROUTING -o {} -j MASQUERADE'.format(self.inet))
             self._execute_shell(
                 'iptables -A FORWARD -i {} -o {} -j ACCEPT -m state --state RELATED,ESTABLISHED'
                     .format(self.inet, self.wlan))
-            print('iptables -A FORWARD -i {} -o {} -j ACCEPT -m state --state RELATED,ESTABLISHED'
-                  .format(self.inet, self.wlan))
             self._execute_shell('iptables -A FORWARD -i {} -o {} -j ACCEPT'.format(self.wlan, self.inet))
 
         # allow traffic to/from wlan
@@ -180,27 +193,13 @@ class AccessPoint:
         self._execute_shell('iptables -A INPUT --in-interface {} -j ACCEPT'.format(self.wlan))
 
         # start dnsmasq
-        s = 'dnsmasq --dhcp-authoritative --interface={} --dhcp-range={}.20,{}.100,{},4h --listen-address={}' \
-            .format(self.wlan, ipparts, ipparts, self.netmask, self.ip)
+        s = 'dnsmasq -C {}'.format(self.dnsmasq_config_path)
 
         logging.debug('running dnsmasq')
         logging.debug(s)
         r = self._execute_shell(s)
         logging.debug(r)
 
-        # ~ f = open(os.getcwd() + '/hostapd.tem','r')
-        # ~ lout=[]
-        # ~ for line in f.readlines():
-        # ~ lout.append(line.replace('<SSID>',SSID).replace('<PASS>',password))
-        # ~
-        # ~ f.close()
-        # ~ f = open(os.getcwd() + '/hostapd.conf','w')
-        # ~ f.writelines(lout)
-        # ~ f.close()
-
-        # writelog('created: ' + os.getcwd() + '/hostapd.conf')
-        # start hostapd
-        # s = 'hostapd -B ' + os.path.abspath('run.conf')
         s = 'hostapd -B {}'.format(self.hostapd_config_path)
         logging.debug(s)
         logging.debug('running hostapd')
@@ -271,6 +270,7 @@ class AccessPoint:
             return True
 
         self._write_hostapd_config()
+        self._write_dnsmasq_config()
 
         return self._start_router()
 
